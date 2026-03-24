@@ -61,6 +61,12 @@ AIRFLOW_IO_AVAILABLE = Version(airflow_version) >= Version("2.8.0")
 # The following environment variable is populated in Astro Cloud
 in_astro_cloud = os.getenv("ASTRONOMER_ENVIRONMENT") == "cloud"
 
+# Astronomer Platform API settings for fetching connections dynamically
+# These are useful when the webserver needs to fetch connection details from the Platform API
+use_astronomer_api_for_connections = conf.getboolean("cosmos", "use_astronomer_api_for_connections", fallback=False)
+astronomer_organization_id = conf.get("cosmos", "astronomer_organization_id", fallback=os.getenv("ASTRONOMER_ORGANIZATION_ID"))
+astronomer_environment_object_id = conf.get("cosmos", "astronomer_environment_object_id", fallback=None)
+
 try:
     LINEAGE_NAMESPACE = conf.get("openlineage", "namespace")
 except airflow.exceptions.AirflowConfigException:

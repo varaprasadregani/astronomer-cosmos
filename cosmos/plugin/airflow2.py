@@ -1,3 +1,4 @@
+import logging
 import os.path as op
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlsplit
@@ -12,7 +13,15 @@ from flask_appbuilder import AppBuilder, expose
 
 from cosmos.listeners import dag_run_listener
 from cosmos.plugin.snippets import IFRAME_SCRIPT
-from cosmos.settings import dbt_docs_conn_id, dbt_docs_dir, dbt_docs_index_file_name, in_astro_cloud
+from cosmos.settings import (
+    astronomer_environment_object_id,
+    astronomer_organization_id,
+    dbt_docs_conn_id,
+    dbt_docs_dir,
+    dbt_docs_index_file_name,
+    in_astro_cloud,
+    use_astronomer_api_for_connections,
+)
 
 if in_astro_cloud:
     MENU_ACCESS_PERMISSIONS = [
@@ -39,7 +48,38 @@ def open_s3_file(path: str, conn_id: Optional[str]) -> str:
     if conn_id is None:
         conn_id = S3Hook.default_conn_name
 
-    hook = S3Hook(aws_conn_id=conn_id)
+    # If configured to use Astronomer API for connection retrieval
+    if use_astronomer_api_for_connections and astronomer_organization_id and astronomer_environment_object_id:
+        try:
+            from cosmos._utils.astronomer_api import (
+                create_airflow_connection_from_environment_object,
+                get_environment_object,
+            )
+
+            logger = logging.getLogger(__name__)
+            logger.info(
+                "Fetching connection details from Astronomer Platform API for organization %s, environment object %s",
+                astronomer_organization_id,
+                astronomer_environment_object_id,
+            )
+
+            env_object = get_environment_object(astronomer_organization_id, astronomer_environment_object_id)
+            airflow_conn = create_airflow_connection_from_environment_object(env_object)
+
+            # Create S3Hook with the dynamically fetched connection
+            hook = S3Hook(aws_conn_id=airflow_conn.conn_id)
+            # Inject the connection details into the hook
+            hook._connection = airflow_conn  # type: ignore[attr-defined]
+
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Failed to fetch connection from Astronomer API, falling back to standard connection: %s", str(e)
+            )
+            hook = S3Hook(aws_conn_id=conn_id)
+    else:
+        hook = S3Hook(aws_conn_id=conn_id)
+
     bucket, key = bucket_and_key(path)
     try:
         content = hook.read_key(key=key, bucket_name=bucket)
